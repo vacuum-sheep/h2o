@@ -772,8 +772,3 @@ class H2OLlamaForCausalLM_streaming(LlamaForCausalLM):
         num_layers = len(self.model.layers)
         for layer_idx in range(num_layers):
             self.model.layers[layer_idx].self_attn = H2OLlamaAttention_streaming(config)
-
-
-
-
-
