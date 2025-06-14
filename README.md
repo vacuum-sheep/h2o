@@ -1,5 +1,4 @@
-Reproduce some experiments totally based on the https://github.com/FMInference/H2O.git
-
+Reproduce some experiments fully based on the https://github.com/FMInference/H2O.git
 
 
 
