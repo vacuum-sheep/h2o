@@ -1,3 +1,13 @@
+'''
+它是一个用于 评估语言模型生成摘要（summarization）能力 的测试脚本，支持：
+	•	使用不同模型（LLaMA / H2OLLaMA）加载推理；
+	•	加载带有真实摘要标签的数据；
+	•	通过 model.generate() 执行抽样式摘要生成；
+	•	使用 ROUGE 指标进行生成质量评估；
+	•	支持 H2O KV Cache，对其效果进行评估比较；
+	•	最终将每个样本的摘要结果、logprobs、ROUGE 分数写入 output_path。
+'''
+
 import argparse
 import json
 import os.path
