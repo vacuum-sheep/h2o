@@ -8,3 +8,5 @@ python -u evaluate_task_result.py \
   --task-name ${task} \
   --num-fewshot ${shots} \
   --model-type ${model_arch}
+
+
