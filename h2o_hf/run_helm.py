@@ -16,12 +16,6 @@
 # limitations under the License.
 """ Conditional text generation with the auto-regressive models of the library (GPT/GPT-2/CTRL/Transformer-XL/XLNet)
 """
-'''
-测试模型输出能否满足风格，格式多样性，以HELM-style benchmarks评估
-
-输入：{"request": {"prompt": ..., "temperature": ..., "top_p": ..., "n": ..., "stop": ..., "max_tokens": ...}}
-输出：模型生成的文本 + 每个 token 的 logprob + top_logprobs
-'''
 
 
 import argparse
@@ -51,8 +45,8 @@ from transformers import (
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 
 from utils_hh.modify_llama import convert_kvcache_llama_heavy_recent, LlamaAttention_heavy_hitter
-# from utils_hh.modify_gptneox import convert_kvcache_gpt_neox_heavy_recent, GPTNeoXAttention_Mask
-# from utils_hh.modify_opt import convert_kvcache_opt_heavy_recent, OPTAttention_Mask
+from utils_hh.modify_gptneox import convert_kvcache_gpt_neox_heavy_recent, GPTNeoXAttention_Mask
+from utils_hh.modify_opt import convert_kvcache_opt_heavy_recent, OPTAttention_Mask
 
 
 logging.basicConfig(
@@ -96,14 +90,14 @@ def set_seed(args):
 
 ENABLE_Heavy_Hitter_FUNCTIONS = {
     "llama": convert_kvcache_llama_heavy_recent,
-    # "opt": convert_kvcache_opt_heavy_recent,
-    # "gpt_neox": convert_kvcache_gpt_neox_heavy_recent,
+    "opt": convert_kvcache_opt_heavy_recent,
+    "gpt_neox": convert_kvcache_gpt_neox_heavy_recent,
 }
 
 TAGET_MODULE = {
     "llama": LlamaAttention_heavy_hitter,
-    # "opt": OPTAttention_Mask,
-    # "gpt_neox": GPTNeoXAttention_Mask,
+    "opt": OPTAttention_Mask,
+    "gpt_neox": GPTNeoXAttention_Mask,
 }
 
 def adjust_length_to_model(length, max_sequence_length):
@@ -130,8 +124,7 @@ def main():
     parser.add_argument("--recent_ratio", type=float, default=0.1)
     parser.add_argument('--enable_small_cache', action='store_true')
 
-    parser.add_argument("--sample_num", type=int, default=10)
-    # parser.add_argument("--sample_num", type=int, default=1000)
+    parser.add_argument("--sample_num", type=int, default=1000)
 
     parser.add_argument("--k", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42, help="random seed for initialization")

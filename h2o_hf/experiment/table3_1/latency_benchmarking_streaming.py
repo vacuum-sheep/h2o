@@ -7,7 +7,7 @@ import subprocess, argparse, os, json, time
 def run(length):
     cmd = [
         "python", "run_streaming.py",
-        "--model_name_or_path", "huggyllama/llama-6b",
+        "--model_name_or_path", "huggyllama/llama-7b",
         "--data_root", "data",
         "--enable_streaming_with_H2O",
         "--heavy_hitter_size", "4",

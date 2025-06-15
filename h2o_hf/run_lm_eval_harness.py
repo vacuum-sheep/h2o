@@ -1,10 +1,3 @@
-'''
-配合 LMEval-harness 数据集使用，比较：相同上下文下，H2O cache 是否导致 token 概率分布变化（不生成新文本，只计算已有 token 的概率)
-
-输入：{"prompt": ...}（无需标签）
-输出：logprob 和 top-1 token 的概率
-'''
-
 import argparse
 import json, tqdm
 import torch
