@@ -16,6 +16,7 @@
 # limitations under the License.
 """ Conditional text generation with the auto-regressive models
 """
+'''测试同一模型在普通 KV cache 和 H2O Heavy-Hitter cache 下的文本生成差异（同一个 prompt 下的输出差异）'''
 
 
 import argparse

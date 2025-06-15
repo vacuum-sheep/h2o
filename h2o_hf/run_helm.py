@@ -16,6 +16,12 @@
 # limitations under the License.
 """ Conditional text generation with the auto-regressive models of the library (GPT/GPT-2/CTRL/Transformer-XL/XLNet)
 """
+'''
+测试模型输出能否满足风格，格式多样性，以HELM-style benchmarks评估
+
+输入：{"request": {"prompt": ..., "temperature": ..., "top_p": ..., "n": ..., "stop": ..., "max_tokens": ...}}
+输出：模型生成的文本 + 每个 token 的 logprob + top_logprobs
+'''
 
 
 import argparse

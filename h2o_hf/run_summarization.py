@@ -1,192 +1,206 @@
-'''
-它是一个用于 评估语言模型生成摘要（summarization）能力 的测试脚本，支持：
-	•	使用不同模型（LLaMA / H2OLLaMA）加载推理；
-	•	加载带有真实摘要标签的数据；
-	•	通过 model.generate() 执行抽样式摘要生成；
-	•	使用 ROUGE 指标进行生成质量评估；
-	•	支持 H2O KV Cache，对其效果进行评估比较；
-	•	最终将每个样本的摘要结果、logprobs、ROUGE 分数写入 output_path。
-'''
+import warnings
 
+warnings.filterwarnings("ignore")
+
+import torch
 import argparse
 import json
-import os.path
+import os
+import time
+import re
+import sys
 
-import tqdm
-import torch
-import copy
-from copy import deepcopy
-import dataclasses
-from xopen import xopen
-import math
-import matplotlib.pyplot as plt 
+from tqdm import tqdm
+#from streaming_llm.utils import load, download_url, load_jsonl
+from utils_real_drop.stream import load, download_url, load_jsonl
 
-from rouge import Rouge
-import logging
-import numpy as np
+from transformers.models.llama.modeling_llama import LlamaAttention
+from utils_real_drop.modify_llama import H2OLlamaAttention_streaming, H2OLlamaForCausalLM_streaming
 
-from lost_in_the_middle.prompting import (
-    Document,
-    get_closedbook_qa_prompt,
-    get_qa_prompt,
-    get_qa_prompt_index
-)
+@torch.no_grad()
+# past_key_values 就是那个 kv cache
+def greedy_generate(model, tokenizer, input_ids, past_key_values, max_gen_len, measure:dict = None):
+    """
+    Streaming greedy decoding + 吞吐率统计。
+    `measure` 是 dict：{"gen_tokens": 0, "seconds": 0}
+    """
+    if measure is None:
+        measure = {"gen_tokens": 0, "seconds": 0}
 
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
-from transformers.models.llama.configuration_llama import LlamaConfig
-from utils_real_drop.modify_llama import H2OLlamaForCausalLM, H2OLlamaAttention
+    t0 = time.time()
 
-
-
-os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-
-MAX_LENGTH = int(10000)  # Hardcoded max length to avoid infinite loop
-
-def set_seed(args):
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    if args.n_gpu > 0:
-        torch.cuda.manual_seed_all(args.seed)
-
-
-ENABLE_Heavy_Hitter_FUNCTIONS = {
-    "llama": None,
-    "llama_h2o": H2OLlamaForCausalLM
-}
-
-TAGET_MODULE = {
-    "llama": None,
-    "llama_h2o": H2OLlamaAttention
-}
-
-if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("--input_path", type=str, default="")
-    parser.add_argument("--output_path", type=str, default="")
-
-    parser.add_argument("--model_name", type=str, default="")
-    parser.add_argument("--cache_dir", type=str, default=None)
-
-    parser.add_argument("--hh_size", type=int, default=1024)
-    parser.add_argument("--recent_size", type=int, default=1024)
-
-    parser.add_argument('--enable_h2o_cache', action='store_true')
-
-    parser.add_argument("--sample_num", type=int, default=100)
-    parser.add_argument("--k", type=int, default=0)
-    parser.add_argument("--seed", type=int, default=42, help="random seed for initialization")
-    parser.add_argument("--no_cuda", action="store_true", help="Avoid using CUDA when available")
-    parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument(
-        "--fp16",
-        action="store_true",
-        help="Whether to use 16-bit (mixed) precision (through NVIDIA apex) instead of 32-bit",
+    # prefill
+    outputs = model(
+        input_ids=input_ids,
+        past_key_values=past_key_values,
+        use_cache=True,
     )
+    # 处理 prefill 结果
+    past_key_values = outputs.past_key_values
+    pred_token_idx = outputs.logits[:, -1, :].argmax(dim=-1).unsqueeze(1)
+
+    '''generated_ids 用于保存每一个 token id，后续用于 decode 成人类可读文本。pos 用于追踪“打印到哪一段了”。
+		不生成文本结果，只测试生成速度，不需要 generated_ids。
+		pos 仅用于输出字符串片段，对吞吐率无用。'''
+    # generated_ids = [pred_token_idx.item()]
+    # pos = 0
+
+    # token by token 的 streaming 推理
+    for _ in range(max_gen_len - 1):
+        outputs = model(
+            input_ids=pred_token_idx,
+            past_key_values=past_key_values,
+            use_cache=True,
+        )
+        past_key_values = outputs.past_key_values
+        pred_token_idx = outputs.logits[:, -1, :].argmax(dim=-1).unsqueeze(1)
+
+        # 逐 token 地拼出完整句子（使用 .decode()），并边生成边打印出来。 但 tokenizer.decode， print() I/O 等都会大幅影响时间统计，不该算进推理性能的计时里
+        # generated_ids.append(pred_token_idx.item())
+        # generated_text = (
+        #     tokenizer.decode(
+        #         generated_ids,
+        #         skip_special_tokens=True,
+        #         clean_up_tokenization_spaces=True,
+        #         spaces_between_special_tokens=False,
+        #     )
+        #     .strip()
+        #     .split(" ")
+        # )
+
+        # now = len(generated_text) - 1
+        # if now > pos:
+        #     print(" ".join(generated_text[pos:now]), end=" ", flush=True)
+        #     pos = now
+
+        # 累计token个数
+        measure["gen_tokens"] += pred_token_idx.size(0) # batch size
+
+        # 判断是否提前结束, 检查是否每个 sample 都生成了 <eos>
+        if torch.all(pred_token_idx.squeeze(-1) == tokenizer.eos_token_id):
+            break
+
+    # print(" ".join(generated_text[pos:]), flush=True)
+    measure["seconds"] += time.time() - t0
+    return past_key_values
+
+@torch.no_grad()
+def streaming_inference(model, tokenizer, prompts, kv_cache=None, max_gen_len=1000):
+    past_key_values = None
+    for idx, prompt in enumerate(prompts):
+        prompt = "USER: " + prompt + "\n\nASSISTANT: "
+        print("\n" + prompt, end="")
+        input_ids = tokenizer(prompt, return_tensors="pt").input_ids
+        input_ids = input_ids.to(model.device)
+        seq_len = input_ids.shape[1]
+        if kv_cache is not None:
+            space_needed = seq_len + max_gen_len
+            past_key_values = kv_cache.evict_for_space(past_key_values, space_needed)
+
+        past_key_values = greedy_generate(
+            model, tokenizer, input_ids, past_key_values, max_gen_len=max_gen_len
+        )
+
+# @torch.no_grad()
+# def streaming_inference_heavy_hitter(model, tokenizer, prompts, kv_cache=None, max_gen_len=1000):
+#     past_key_values = None
+#     for idx, prompt in enumerate(prompts):
+#         prompt = "USER: " + prompt + "\n\nASSISTANT: "
+#         print("\n" + prompt, end="")
+#         input_ids = tokenizer(prompt, return_tensors="pt").input_ids
+#         input_ids = input_ids.to(model.device)
+#         seq_len = input_ids.shape[1]
+#         if kv_cache is not None:
+#             space_needed = seq_len + max_gen_len
+
+#             for name, m in model.named_modules():
+#                 if isinstance(m, H2OLlamaAttention):
+#                     layer_idx = int(name.split(".")[2])
+#                     past_key_values[layer_idx] = m.kv_cache.evict_for_space(past_key_values[layer_idx], space_needed)   
+#         measure = {"gen_tokens": 0, "seconds": 0}
+#         past_key_values = greedy_generate(
+#             model, tokenizer, input_ids, past_key_values, max_gen_len=max_gen_len, measure=measure
+#         )
+#         print(measure["gen_tokens"]/measure["seconds"])
+
+@torch.no_grad()
+def streaming_inference_heavy_hitter(model, tokenizer, prompts, kv_cache=None, max_gen_len=1000):
+    prompts = ["USER: " + p + "\n\nASSISTANT: " for p in prompts]
+
+    # print("\n".join(prompts))  # 如果你想观察每条 prompt
+
+    # Batch tokenize
+    inputs = tokenizer(prompts, return_tensors="pt", padding=True, truncation=True)
+    input_ids = inputs["input_ids"].to(model.device)
+
+    print("Batch size =", input_ids.shape[0])  # Debug：确认 batch size
+
+    if kv_cache is not None:
+        space_needed = input_ids.shape[1] + max_gen_len
+        for name, m in model.named_modules():
+            if isinstance(m, H2OLlamaAttention):
+                layer_idx = int(name.split(".")[2])
+                kv_cache[layer_idx] = m.kv_cache.evict_for_space(kv_cache[layer_idx], space_needed)
+
+    measure = {"gen_tokens": 0, "seconds": 0}
+    past_key_values = greedy_generate(
+        model, tokenizer, input_ids, kv_cache, max_gen_len=max_gen_len, measure=measure
+    )
+    print("[THROUGHPUT]", measure["gen_tokens"] / measure["seconds"])
+
+
+def main(args):
+    model_name_or_path = args.model_name_or_path
+    model, tokenizer = load(model_name_or_path, args.enable_streaming_with_H2O, args)
+    test_filepath = os.path.join(args.data_root, "mt_bench.jsonl")
+    print(f"Loading data from {test_filepath} ...")
+
+    if not os.path.exists(test_filepath):
+        download_url(
+            "https://raw.githubusercontent.com/lm-sys/FastChat/main/fastchat/llm_judge/data/mt_bench/question.jsonl",
+            args.data_root,
+        )
+        os.rename(os.path.join(args.data_root, "question.jsonl"), test_filepath)
+
+    list_data = load_jsonl(test_filepath)
+    prompts = []
+    for sample in list_data:
+        prompts += sample["turns"]
+
+    if args.enable_streaming_with_H2O:
+        kv_cache = None
+        streaming_inference_heavy_hitter(
+            model,
+            tokenizer,
+            prompts,
+            kv_cache,
+            max_gen_len=args.max_gen_len
+        )
+
+    else:
+        kv_cache = None
+        streaming_inference(
+            model,
+            tokenizer,
+            prompts,
+            kv_cache,
+        )
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--model_name_or_path", type=str, default="lmsys/vicuna-13b-v1.3"
+    )
+    parser.add_argument("--data_root", type=str, default="data/")
+    parser.add_argument("--enable_streaming_with_H2O", action="store_true")
+    parser.add_argument("--start_size", type=int, default=4)
+    parser.add_argument("--heavy_hitter_size", type=int, default=4)
+    parser.add_argument("--recent_size", type=int, default=2000)
+
+    # For testing latency
+    parser.add_argument("--max_gen_len", type=int, default=512)
+
     args = parser.parse_args()
 
-    args.device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
-    args.n_gpu = 0 if args.no_cuda else torch.cuda.device_count()
-    set_seed(args)
-
-    model_name = args.model_name
-    input_path = args.input_path
-    output_path = args.output_path
-
-    config = AutoConfig.from_pretrained(model_name, cache_dir=args.cache_dir)
-    tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True, cache_dir=args.cache_dir)
-
-    if args.batch_size>1:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    if args.enable_h2o_cache:
-        print('Enabling H2O KV cache')
-        config.hh_size = args.hh_size
-        config.recent_size = args.recent_size
-        model = ENABLE_Heavy_Hitter_FUNCTIONS['llama_h2o'].from_pretrained(model_name, config=config,
-                                                                            cache_dir=args.cache_dir)
-    else:
-        model = AutoModelForCausalLM.from_pretrained(model_name, cache_dir=args.cache_dir)
-
-    model.half().eval().cuda()
-
-    requests = []
-    with open(input_path, 'r') as f:
-        for line in f:
-            if line.strip() != '':
-                requests.append(json.loads(line))
-
-    print(len(requests))
-    if args.sample_num < len(requests):
-        print('Sample {} Examples from {} samples'.format(args.sample_num, len(requests)))
-    requests = requests[:args.sample_num]
-
-    results = []
-    rouge = Rouge()
-    rouge1_score_list = []
-    rouge2_score_list = []
-    rougel_score_list = []
-
-    with torch.no_grad():
-        for request in tqdm.tqdm(requests):
-            result = {'request': request, 'result': {}}
-            prompt = request['article']
-            label = request['summary_gt']
-            temperature = request['temperature']
-            stop = request['stop']
-
-            input_ids = tokenizer(prompt, add_special_tokens=False, return_tensors='pt').input_ids.to(model.device)
-
-            output_sequences = model.generate(
-                input_ids=input_ids,
-                max_length=request['max_tokens'] + len(input_ids[0]),
-                temperature=temperature,
-                top_k=args.k,
-                top_p=request['top_p'],
-                do_sample=True,
-                num_return_sequences=request['n'],
-                return_dict_in_generate=True, output_scores=True,
-            )
-
-            if args.enable_h2o_cache:
-                for name, m in model.named_modules():
-                    if isinstance(m, TAGET_MODULE['llama_h2o']):
-                        m._clean_cache()
-
-            tokens = tokenizer.convert_ids_to_tokens(output_sequences['sequences'].squeeze(0))[len(input_ids[0]):]
-            logprobs = [logits.log_softmax(dim=-1).max().item() for logits in output_sequences['scores']]
-            top_logprobs = [{i: v for i, v in zip(tokens, logprobs)}]
-
-            generate_text = tokenizer.decode(output_sequences['sequences'].squeeze(0)[len(input_ids[0]):])
-            generate_text = generate_text[: generate_text.find(stop[0])]
-
-            scores = rouge.get_scores(generate_text, label)[0]
-            rouge1_score_list.append(scores['rouge-1']['f'])
-            rouge2_score_list.append(scores['rouge-2']['f'])
-            rougel_score_list.append(scores['rouge-l']['f'])
-
-            result['result'] = {
-                "choices": [
-                    {
-                        "text": generate_text,
-                        "logprobs": {
-                            "tokens": tokens, 
-                            "token_logprobs": logprobs, 
-                            "top_logprobs": top_logprobs, 
-                            "text_offset": []
-                        }, 
-                        "finish_reason": "length"
-                    }
-                ], 
-                "request_time": {
-                    "batch_time": 0, 
-                    "batch_size": 1}
-            }
-            
-            results.append(result)
-            print('rouge-1: {:.6f}, rouge-2: {:.6f}, rouge-l: {:.6f}'.format(np.mean(rouge1_score_list), np.mean(rouge2_score_list), np.mean(rougel_score_list)))
-
-    with open(output_path, 'w') as f:
-        for result in results:
-            f.write(json.dumps(result) + '\n')
+    main(args)
