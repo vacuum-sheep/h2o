@@ -1,11 +1,5 @@
 '''
-它是一个用于 评估语言模型生成摘要（summarization）能力 的测试脚本，支持：
-	•	使用不同模型（LLaMA / H2OLLaMA）加载推理；
-	•	加载带有真实摘要标签的数据；
-	•	通过 model.generate() 执行抽样式摘要生成；
-	•	使用 ROUGE 指标进行生成质量评估；
-	•	支持 H2O KV Cache，对其效果进行评估比较；
-	•	最终将每个样本的摘要结果、logprobs、ROUGE 分数写入 output_path。
+H2O 自己的评测脚本
 '''
 
 import argparse
@@ -25,12 +19,12 @@ from rouge import Rouge
 import logging
 import numpy as np
 
-from lost_in_the_middle.prompting import (
-    Document,
-    get_closedbook_qa_prompt,
-    get_qa_prompt,
-    get_qa_prompt_index
-)
+# from lost_in_the_middle.prompting import (
+#     Document,
+#     get_closedbook_qa_prompt,
+#     get_qa_prompt,
+#     get_qa_prompt_index
+# )
 
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 from transformers.models.llama.configuration_llama import LlamaConfig
@@ -74,7 +68,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--enable_h2o_cache', action='store_true')
 
-    parser.add_argument("--sample_num", type=int, default=100)
+    parser.add_argument("--sample_num", type=int, default=50)
+    # parser.add_argument("--sample_num", type=int, default=100)
     parser.add_argument("--k", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42, help="random seed for initialization")
     parser.add_argument("--no_cuda", action="store_true", help="Avoid using CUDA when available")
@@ -95,6 +90,9 @@ if __name__ == '__main__':
     output_path = args.output_path
 
     config = AutoConfig.from_pretrained(model_name, cache_dir=args.cache_dir)
+
+    config.rope_theta = 10000  # 默认值，或根据你模型训练时使用的值来设定
+    
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True, cache_dir=args.cache_dir)
 
     if args.batch_size>1:
@@ -128,6 +126,8 @@ if __name__ == '__main__':
     rouge2_score_list = []
     rougel_score_list = []
 
+    input_token_length_list = [] 
+
     with torch.no_grad():
         for request in tqdm.tqdm(requests):
             result = {'request': request, 'result': {}}
@@ -137,6 +137,7 @@ if __name__ == '__main__':
             stop = request['stop']
 
             input_ids = tokenizer(prompt, add_special_tokens=False, return_tensors='pt').input_ids.to(model.device)
+            input_token_length_list.append(input_ids.shape[1])
 
             output_sequences = model.generate(
                 input_ids=input_ids,
@@ -186,6 +187,8 @@ if __name__ == '__main__':
             
             results.append(result)
             print('rouge-1: {:.6f}, rouge-2: {:.6f}, rouge-l: {:.6f}'.format(np.mean(rouge1_score_list), np.mean(rouge2_score_list), np.mean(rougel_score_list)))
+
+    print("Average input token length: {:.2f}".format(np.mean(input_token_length_list)))
 
     with open(output_path, 'w') as f:
         for result in results:
