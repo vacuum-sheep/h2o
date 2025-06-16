@@ -61,10 +61,17 @@ if __name__ == '__main__':
 
     results = []
     with torch.no_grad():
+        DEBUG_N = 0
         for request in tqdm.tqdm(requests):
             result = {'request': request, 'result': {}}
             prompt = request['prompt']
             input_ids = tokenizer(prompt, add_special_tokens=False, return_tensors='pt').input_ids.to(model.device)
+
+            # debug
+            if DEBUG_N < 5:
+                seq_len = input_ids.size(-1)
+                print(f"[DEBUG] seq_len={seq_len}, heavy_budget={int(seq_len*args.heavy_ratio)}, recent_budget={int(seq_len*args.recent_ratio)}")
+                DEBUG_N += 1
 
             logits = model(input_ids).logits.log_softmax(dim=-1)
 

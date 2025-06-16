@@ -55,6 +55,7 @@ def local_heavy_hitter_mask(attn_weights, heavy_budget):
 
 class LlamaAttention_heavy_hitter(nn.Module):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
+    # layer_idx = 0
 
     def __init__(self, config: LlamaConfig):
         super().__init__()
@@ -63,6 +64,7 @@ class LlamaAttention_heavy_hitter(nn.Module):
         self.num_heads = config.num_attention_heads
         self.head_dim = self.hidden_size // self.num_heads
         self.max_position_embeddings = config.max_position_embeddings
+        # self.layer_idx += 1
 
         if (self.head_dim * self.num_heads) != self.hidden_size:
             raise ValueError(
@@ -163,7 +165,13 @@ class LlamaAttention_heavy_hitter(nn.Module):
         ones = torch.triu(ones, diagonal=-recent_budget)
         mask_bottom = torch.logical_or(mask_bottom, ones)
         # mask_bottom = ones
+
         attn_weights[~mask_bottom] = torch.finfo(attn_weights.dtype).min
+
+        # kept_mask = mask_bottom[0, 0, -1]
+        # kept_indices = torch.nonzero(kept_mask).squeeze(-1)
+        # print(f"[DEBUG][Layer {self.layer_idx}] KV Cache Prune: kept {kept_indices.numel()} / {attn_weights.shape[-1]} tokens")
+        # print(f"[DEBUG][Layer {self.layer_idx}] Kept indices: {sorted(kept_indices.tolist())}")
 
 
         # upcast attention to fp32

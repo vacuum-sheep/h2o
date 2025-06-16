@@ -5,12 +5,14 @@ shots=5
 model=huggyllama/llama-7b
 model_arch=llama
 
-ratios=(0.01 0.2 0.4 0.6 0.8 1.0)
+# ratios=(0.01 0.2 0.4 0.6 0.8 1.0)
+# ratios=(0.01 0.1 0.2 0.3 0.4 0.5)
+ratios=(0.3 0.4)
 
 for ratio in "${ratios[@]}"
 do
-  hr=$(echo "$ratio / 2" | bc -l)
-  rr=$(echo "$ratio / 2" | bc -l)
+  hr=$ratio
+  rr=$ratio
   echo "Running with heavy_ratio=${hr}, recent_ratio=${rr}"
 
   python -u run_lm_eval_harness.py \

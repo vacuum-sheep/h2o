@@ -4,7 +4,8 @@ T=1421
 scale=0.5
 
 # kv cache budget
-a_list=(0.4 0.6 0.8 1.0)
+a_list=(1.0)
+# a_list=(0.4 0.6 0.8 1.0)
 
 for a in "${a_list[@]}"
 do
