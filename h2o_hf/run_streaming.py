@@ -137,8 +137,8 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        # "--model_name_or_path", type=str, default="lmsys/vicuna-13b-v1.3"
         "--model_name_or_path", type=str, default="lmsys/vicuna-13b-v1.3"
+        # "--model_name_or_path", type=str, default="huggyllama/llama-7b"
     )
     parser.add_argument("--data_root", type=str, default="data/")
     parser.add_argument("--enable_streaming_with_H2O", action="store_true")
