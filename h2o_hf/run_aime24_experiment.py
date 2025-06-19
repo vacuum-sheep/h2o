@@ -70,19 +70,16 @@ MODEL_CLASSES = {
 # Padding text to help Transformer-XL and XLNet with short prompts as proposed by Aman Rusia
 # in https://github.com/rusiaaman/XLNet-gen#methodology
 # and https://medium.com/@amanrusia/xlnet-speaks-comparison-to-gpt-2-ea1a4e9ba39e
-
-# PREFIX = """In 1991, the remains of Russian Tsar Nicholas II and his family
-# (except for Alexei and Maria) are discovered.
-# The voice of Nicholas's young son, Tsarevich Alexei Nikolaevich, narrates the
-# remainder of the story. 1883 Western Siberia,
-# a young Grigori Rasputin is asked by his father and a group of men to perform magic.
-# Rasputin has a vision and denounces one of the men as a horse thief. Although his
-# father initially slaps him for making such an accusation, Rasputin watches as the
-# man is chased outside and beaten. Twenty years later, Rasputin sees a vision of
-# the Virgin Mary, prompting him to become a priest. Rasputin quickly becomes famous,
-# with people, even a bishop, begging for his blessing. <eod> </s> <eos>"""
-
-
+PREFIX = """In 1991, the remains of Russian Tsar Nicholas II and his family
+(except for Alexei and Maria) are discovered.
+The voice of Nicholas's young son, Tsarevich Alexei Nikolaevich, narrates the
+remainder of the story. 1883 Western Siberia,
+a young Grigori Rasputin is asked by his father and a group of men to perform magic.
+Rasputin has a vision and denounces one of the men as a horse thief. Although his
+father initially slaps him for making such an accusation, Rasputin watches as the
+man is chased outside and beaten. Twenty years later, Rasputin sees a vision of
+the Virgin Mary, prompting him to become a priest. Rasputin quickly becomes famous,
+with people, even a bishop, begging for his blessing. <eod> </s> <eos>"""
 
 
 def set_seed(args):
@@ -94,7 +91,7 @@ def set_seed(args):
 
 ENABLE_Heavy_Hitter_FUNCTIONS = {
     "llama": convert_kvcache_llama_heavy_recent,
-    # # "opt": convert_kvcache_opt_heavy_recent,
+    # "opt": convert_kvcache_opt_heavy_recent,
     # "gpt_neox": convert_kvcache_gpt_neox_heavy_recent,
 }
 
@@ -103,7 +100,7 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--model_arch", type=str, default='llama')
-    parser.add_argument("--model_name", type=str, default='huggyllama/llama-7b')
+    parser.add_argument("--model_name", type=str, default='huggyllama/llama-13b')
     parser.add_argument("--cache_dir", type=str, default='../../checkpoint/')
 
     parser.add_argument("--heavy_ratio", type=float, default=0.1)
@@ -128,8 +125,7 @@ def main():
 
     # Change to your custom prompt text
     # prompt_text = 'In the year 2087, humanity has achieved remarkable technological advancements and established colonies on multiple planets within the Milky Way galaxy. Interstellar travel has become commonplace, with faster-than-light spacecraft enabling people to explore distant star systems. Earth has undergone significant changes due to sustainable development efforts, such as harnessing renewable energy sources and implementing widespread ecological restoration projects. However, alongside these triumphs, new challenges have emerged, including the rise of artificial intelligence, ethical dilemmas surrounding genetic engineering, and interplanetary political tensions. Against this backdrop, a team of intrepid scientists embarks on a mission to uncover the secrets of an ancient alien civilization, hidden deep within an uncharted exoplanet. As they navigate treacherous terrains and encounter otherworldly phenomena, they must confront their own fears and reconcile humanity\'s thirst for knowledge with the potential consequences of uncovering secrets that were better left buried. The fate of both their mission and the future of humanity hang in the balance.'
-    # prompt_text = 'In a small, bustling cafe nestled in the heart of a vibrant city, a serendipitous event unfolded, leaving a lasting impression on all who witnessed it. As the patrons sat sipping their coffees and engaging in animated conversations, a talented street musician entered the cafe, carrying a weathered guitar and radiating an aura of creativity.'
-    prompt_text = 'hello.'
+    prompt_text = 'In a small, bustling cafe nestled in the heart of a vibrant city, a serendipitous event unfolded, leaving a lasting impression on all who witnessed it. As the patrons sat sipping their coffees and engaging in animated conversations, a talented street musician entered the cafe, carrying a weathered guitar and radiating an aura of creativity.'
 
     model_name = args.model_name
     config = AutoConfig.from_pretrained(model_name, cache_dir=args.cache_dir)
