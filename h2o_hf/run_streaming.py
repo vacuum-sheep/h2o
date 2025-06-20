@@ -59,7 +59,7 @@ def greedy_generate(model, tokenizer, input_ids, past_key_values, max_gen_len):
     return past_key_values
 
 @torch.no_grad()
-def streaming_inference(model, tokenizer, prompts, kv_cache=None, max_gen_len=1000):
+def streaming_inference(model, tokenizer, prompts, kv_cache=None, max_gen_len=10000):
     past_key_values = None
     for idx, prompt in enumerate(prompts):
         prompt = "USER: " + prompt + "\n\nASSISTANT: "
@@ -76,7 +76,7 @@ def streaming_inference(model, tokenizer, prompts, kv_cache=None, max_gen_len=10
         )
 
 @torch.no_grad()
-def streaming_inference_heavy_hitter(model, tokenizer, prompts, kv_cache=None, max_gen_len=1000):
+def streaming_inference_heavy_hitter(model, tokenizer, prompts, kv_cache=None, max_gen_len=10000):
     past_key_values = None
     for idx, prompt in enumerate(prompts):
         prompt = "USER: " + prompt + "\n\nASSISTANT: "
@@ -137,7 +137,8 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--model_name_or_path", type=str, default="lmsys/vicuna-13b-v1.3"
+        "--model_name_or_path", type=str, default="deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+        # "--model_name_or_path", type=str, default="lmsys/vicuna-13b-v1.3"
         # "--model_name_or_path", type=str, default="huggyllama/llama-7b"
     )
     parser.add_argument("--data_root", type=str, default="data/")
